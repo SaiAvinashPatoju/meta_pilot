@@ -12,3 +12,4 @@ tiktoken
 pytest
 pytest-asyncio
 httpx
+streamlit

@@ -42,6 +42,14 @@ uvicorn app.main:app --reload
 
 Server runs at: http://localhost:8000
 
+### Run the Chat UI
+
+```bash
+streamlit run frontend/app.py
+```
+
+Chat UI runs at: http://localhost:8501
+
 ## API Endpoints
 
 ### Ingest Video
