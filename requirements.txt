@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+youtube-transcript-api
+openai
+pinecone-client
+langchain
+langchain-text-splitters
+tiktoken
+pytest
+pytest-asyncio
+httpx
