@@ -154,6 +154,25 @@ def get_rules() -> list:
         return []
 
 
+def generate_full_ad(product_name: str, usp: str, target_audience: str = None) -> dict:
+    """Generate complete ad creative."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/creative/full-ad",
+            json={
+                "product_name": product_name,
+                "usp": usp,
+                "target_audience": target_audience
+            },
+            timeout=60
+        )
+        if response.status_code == 200:
+            return response.json()
+        return {"error": f"API error: {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -165,6 +184,8 @@ if "requirements" not in st.session_state:
     st.session_state.requirements = {}
 if "progress" not in st.session_state:
     st.session_state.progress = 0
+if "generated_creative" not in st.session_state:
+    st.session_state.generated_creative = None
 
 
 # Sidebar
@@ -218,7 +239,7 @@ with st.sidebar:
 st.markdown('<h1 class="main-header">🎯 MetaPilot</h1>', unsafe_allow_html=True)
 
 # Mode tabs
-tab1, tab2 = st.tabs(["💬 Campaign Builder", "🔍 Knowledge Q&A"])
+tab1, tab2, tab3 = st.tabs(["💬 Campaign Builder", "✍️ Creative Studio", "🔍 Knowledge Q&A"])
 
 # ========== TAB 1: Campaign Builder (Agent Mode) ==========
 with tab1:
@@ -290,8 +311,63 @@ with tab1:
             st.rerun()
 
 
-# ========== TAB 2: Knowledge Q&A (RAG Mode) ==========
+# ========== TAB 2: Creative Studio ==========
 with tab2:
+    st.markdown("*Generate ad copy following Jim's copywriting rules*")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("### 📝 Input")
+        product_name = st.text_input("Product/Service Name", placeholder="e.g., Organic Coffee")
+        usp = st.text_area("Unique Selling Proposition", placeholder="What makes it unique?", height=100)
+        target_audience = st.text_input("Target Audience (optional)", placeholder="e.g., Coffee lovers in NYC")
+        
+        if st.button("✨ Generate Ad Copy", disabled=not api_status or not product_name or not usp, use_container_width=True):
+            with st.spinner("Generating creative..."):
+                result = generate_full_ad(product_name, usp, target_audience)
+                if "error" not in result:
+                    st.session_state.generated_creative = result
+                else:
+                    st.error(result["error"])
+    
+    with col2:
+        st.markdown("### 🎨 Generated Creative")
+        
+        if st.session_state.generated_creative:
+            creative = st.session_state.generated_creative
+            
+            # Headlines
+            st.markdown("**Headlines** `[COPY-001]`")
+            for i, h in enumerate(creative.get("headlines", {}).get("headlines", [])[:3]):
+                st.code(h, language=None)
+            
+            st.divider()
+            
+            # Descriptions
+            st.markdown("**Descriptions** `[COPY-002]` (<5 words)")
+            for d in creative.get("descriptions", {}).get("descriptions", [])[:3]:
+                st.code(d, language=None)
+            
+            st.divider()
+            
+            # Primary Text
+            st.markdown("**Primary Text** `[COPY-004]` (PAS Framework)")
+            variations = creative.get("primary_text", {}).get("variations", [])
+            if variations:
+                with st.expander("View Primary Text", expanded=True):
+                    st.markdown(variations[0])
+            
+            # Rule citations
+            st.markdown("---")
+            citations = creative.get("rule_citations", [])
+            st.markdown(f"📎 Rules applied: {' '.join([f'`[{c}]`' for c in citations])}")
+        else:
+            st.info("Fill in the form and click 'Generate Ad Copy' to create headlines, descriptions, and primary text.")
+
+
+# ========== TAB 3: Knowledge Q&A (RAG Mode) ==========
+with tab3:
     st.markdown("*Ask questions about Meta Ads from Jim's course*")
     
     # Display RAG chat history
@@ -338,12 +414,14 @@ with tab2:
         })
 
 # Welcome message for empty state
-if not st.session_state.messages and not st.session_state.agent_messages:
+if not st.session_state.messages and not st.session_state.agent_messages and not st.session_state.generated_creative:
     st.info("""
     👋 **Welcome to MetaPilot!**
     
     Choose your mode:
-    - **Campaign Builder**: Interactive assistant to build your complete Meta Ads campaign
-    - **Knowledge Q&A**: Ask specific questions about Jim's methodology
+    - **Campaign Builder**: Interactive assistant to gather requirements
+    - **Creative Studio**: Generate headlines, descriptions, and body copy
+    - **Knowledge Q&A**: Ask questions about Jim's methodology
     """)
+
 
