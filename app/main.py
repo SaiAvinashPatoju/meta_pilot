@@ -420,3 +420,155 @@ async def generate_full_ad(req: GenerateCreativeRequest):
         "primary_text": primary_text.model_dump(),
         "rule_citations": ["COPY-001", "COPY-002", "COPY-003", "COPY-004"]
     }
+
+
+# ============ Meta API Endpoints (Scaffold) ============
+
+@app.get("/meta/auth/status")
+async def meta_auth_status():
+    """Check Meta API authentication status."""
+    from app.meta.auth import get_auth_client
+    
+    auth = get_auth_client()
+    
+    if not auth.access_token:
+        return {
+            "authenticated": False,
+            "message": "No access token configured. Set META_ACCESS_TOKEN in .env"
+        }
+    
+    try:
+        token_info = auth.debug_token()
+        return {
+            "authenticated": token_info.is_valid,
+            "scopes": token_info.scopes,
+            "app_id": token_info.app_id,
+            "expires_in": token_info.expires_in
+        }
+    except Exception as e:
+        return {
+            "authenticated": False,
+            "error": str(e)
+        }
+
+
+@app.get("/meta/auth/url")
+async def get_meta_auth_url():
+    """Get the OAuth authorization URL for Meta."""
+    from app.meta.auth import get_auth_client
+    
+    auth = get_auth_client()
+    url = auth.get_authorization_url()
+    
+    return {"authorization_url": url}
+
+
+class ExecuteRequest(BaseModel):
+    session_id: str
+    page_id: str
+    link_url: str
+    image_hash: Optional[str] = None
+
+
+@app.post("/meta/preview")
+async def preview_execution(req: GeneratePlanRequest):
+    """Preview what would be created in Meta without executing."""
+    from app.agent.conversational import get_agent
+    from app.strategy.campaign_planner import get_campaign_planner
+    from app.meta.executor import get_executor
+    
+    agent = get_agent()
+    state = agent.get_session(req.session_id)
+    
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if not state.requirements.is_complete():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requirements incomplete. Missing: {state.requirements.missing_pillars()}"
+        )
+    
+    planner = get_campaign_planner()
+    plan = planner.generate_plan(state.requirements)
+    
+    executor = get_executor()
+    preview = executor.get_execution_preview(plan)
+    
+    return preview
+
+
+@app.post("/meta/execute")
+async def execute_campaign(req: ExecuteRequest):
+    """
+    Execute a campaign in Meta (create Campaign, Ad Sets, Ads).
+    
+    REQUIRES: Valid META_ACCESS_TOKEN and META_AD_ACCOUNT_ID in .env
+    """
+    from app.agent.conversational import get_agent
+    from app.strategy.campaign_planner import get_campaign_planner
+    from app.meta.executor import get_executor
+    from app.creative.headline_gen import get_headline_generator
+    from app.creative.description_gen import get_description_generator
+    from app.creative.primary_text_gen import get_primary_text_generator
+    
+    # Validate auth first
+    executor = get_executor()
+    if not executor.validate_credentials():
+        raise HTTPException(
+            status_code=401,
+            detail="Meta API credentials invalid or missing. Configure .env and complete OAuth."
+        )
+    
+    # Get session and requirements
+    agent = get_agent()
+    state = agent.get_session(req.session_id)
+    
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if not state.requirements.is_complete():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Requirements incomplete. Missing: {state.requirements.missing_pillars()}"
+        )
+    
+    # Generate plan and creative
+    planner = get_campaign_planner()
+    plan = planner.generate_plan(state.requirements)
+    
+    reqs = state.requirements
+    headlines = get_headline_generator().generate(
+        product_name=reqs.product_name,
+        usp=reqs.usp,
+        count=3
+    ).headlines
+    
+    descriptions = get_description_generator().generate(
+        product_name=reqs.product_name,
+        usp=reqs.usp,
+        count=3
+    ).descriptions
+    
+    primary_text = get_primary_text_generator().generate(
+        product_name=reqs.product_name,
+        usp=reqs.usp,
+        count=1
+    ).variations[0] if get_primary_text_generator().generate(
+        product_name=reqs.product_name,
+        usp=reqs.usp,
+        count=1
+    ).variations else ""
+    
+    # Execute
+    result = executor.execute_plan(
+        plan=plan,
+        headlines=headlines,
+        descriptions=descriptions,
+        primary_text=primary_text,
+        page_id=req.page_id,
+        link_url=req.link_url,
+        image_hash=req.image_hash
+    )
+    
+    return result.model_dump()
