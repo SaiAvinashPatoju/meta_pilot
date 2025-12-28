@@ -229,3 +229,76 @@ async def delete_video(video_id: str):
     except Exception as e:
         logger.error(f"Delete failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Conversational Agent Endpoints ============
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    welcome_message: str
+
+
+@app.post("/agent/session", response_model=SessionResponse)
+async def create_session():
+    """Create a new conversation session with the agent."""
+    from app.agent.conversational import get_agent
+    
+    agent = get_agent()
+    session_id = agent.create_session()
+    welcome = agent.get_welcome_message(session_id)
+    
+    return SessionResponse(
+        session_id=session_id,
+        welcome_message=welcome
+    )
+
+
+@app.post("/agent/chat")
+async def agent_chat(req: ChatRequest):
+    """Chat with the conversational agent."""
+    from app.agent.conversational import get_agent
+    
+    agent = get_agent()
+    result = agent.chat(req.session_id, req.message)
+    
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
+
+
+@app.get("/agent/session/{session_id}")
+async def get_session_state(session_id: str):
+    """Get the current state of a session."""
+    from app.agent.conversational import get_agent
+    
+    agent = get_agent()
+    state = agent.get_session(session_id)
+    
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return {
+        "session_id": session_id,
+        "requirements": state.requirements.model_dump(),
+        "phase": state.phase,
+        "complete": state.requirements.is_complete(),
+        "progress": state.requirements.completion_percentage(),
+        "missing_pillars": state.requirements.missing_pillars()
+    }
+
+
+@app.get("/agent/session/{session_id}/summary")
+async def get_session_summary(session_id: str):
+    """Get a summary of the collected requirements."""
+    from app.agent.conversational import get_agent
+    
+    agent = get_agent()
+    summary = agent.generate_summary(session_id)
+    
+    return {"summary": summary}

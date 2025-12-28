@@ -37,19 +37,32 @@ st.markdown("""
         font-size: 1.1rem;
         margin-bottom: 2rem;
     }
-    .chat-message {
-        padding: 1rem;
-        border-radius: 12px;
-        margin-bottom: 1rem;
+    .progress-bar {
+        background: #2d3748;
+        border-radius: 10px;
+        height: 20px;
+        margin: 1rem 0;
     }
-    .user-message {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    .progress-fill {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        height: 100%;
+        border-radius: 10px;
+        transition: width 0.3s ease;
+    }
+    .pillar-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 20px;
+        margin: 0.2rem;
+        font-size: 0.85rem;
+    }
+    .pillar-complete {
+        background: #48bb78;
         color: white;
     }
-    .assistant-message {
-        background: #2d3748;
-        color: #e2e8f0;
-        border: 1px solid #4a5568;
+    .pillar-pending {
+        background: #4a5568;
+        color: #a0aec0;
     }
     .citation-badge {
         background: #4a5568;
@@ -58,28 +71,6 @@ st.markdown("""
         border-radius: 4px;
         font-size: 0.8rem;
         margin-right: 0.5rem;
-    }
-    .source-card {
-        background: #2d3748;
-        border: 1px solid #4a5568;
-        border-radius: 8px;
-        padding: 0.8rem;
-        margin-top: 0.5rem;
-    }
-    .stTextInput > div > div > input {
-        background: #2d3748;
-        color: white;
-        border: 1px solid #4a5568;
-    }
-    .stButton > button {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.5rem 2rem;
-    }
-    .stButton > button:hover {
-        background: linear-gradient(90deg, #764ba2 0%, #667eea 100%);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -92,6 +83,32 @@ def check_api_health() -> bool:
         return response.status_code == 200
     except:
         return False
+
+
+def create_agent_session() -> Optional[dict]:
+    """Create a new agent session."""
+    try:
+        response = requests.post(f"{API_BASE_URL}/agent/session", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except:
+        return None
+
+
+def agent_chat(session_id: str, message: str) -> dict:
+    """Chat with the agent."""
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/chat",
+            json={"session_id": session_id, "message": message},
+            timeout=30
+        )
+        if response.status_code == 200:
+            return response.json()
+        return {"error": f"API error: {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def query_rag(question: str, top_k: int = 4) -> dict:
@@ -140,9 +157,14 @@ def get_rules() -> list:
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-if "video_ingested" not in st.session_state:
-    st.session_state.video_ingested = False
+if "agent_session_id" not in st.session_state:
+    st.session_state.agent_session_id = None
+if "agent_messages" not in st.session_state:
+    st.session_state.agent_messages = []
+if "requirements" not in st.session_state:
+    st.session_state.requirements = {}
+if "progress" not in st.session_state:
+    st.session_state.progress = 0
 
 
 # Sidebar
@@ -156,7 +178,7 @@ with st.sidebar:
     if api_status:
         st.success("✅ API Connected")
     else:
-        st.error("❌ API Offline - Start the backend server")
+        st.error("❌ API Offline")
         st.code("uvicorn app.main:app --reload", language="bash")
     
     st.divider()
@@ -166,127 +188,162 @@ with st.sidebar:
     youtube_id = st.text_input(
         "YouTube Video ID",
         value="t0k4WndiQxk",
-        help="Enter the YouTube video ID to ingest"
+        help="Enter the YouTube video ID"
     )
     
     if st.button("🔄 Ingest Video", disabled=not api_status):
-        with st.spinner("Ingesting video..."):
+        with st.spinner("Ingesting..."):
             result = ingest_video(youtube_id)
             if "error" in result:
                 st.error(result["error"])
             else:
-                st.success(f"✅ Ingested {result.get('chunks_created', 0)} chunks")
-                st.session_state.video_ingested = True
+                st.success(f"✅ {result.get('chunks_created', 0)} chunks")
     
     st.divider()
     
     # Playbook Rules
-    st.markdown("### 📋 Playbook Rules")
+    st.markdown("### 📋 Rules Preview")
     if api_status:
         rules = get_rules()
         if rules:
-            for rule in rules[:5]:  # Show first 5 rules
-                with st.expander(f"[{rule['id']}] {rule['category']}"):
+            for rule in rules[:3]:
+                with st.expander(f"[{rule['id']}]"):
                     st.write(rule['rule'])
-                    st.caption(f"⏱️ {rule['timestamp']}")
-        else:
-            st.info("No rules loaded yet")
     
     st.divider()
-    st.caption("Built with Jim's Digital Marketing methodology")
+    st.caption("Jim's Digital Marketing Methodology")
 
 
-# Main chat area
+# Main content
 st.markdown('<h1 class="main-header">🎯 MetaPilot</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Your AI-powered Senior Media Buyer trained on Meta Ads best practices</p>', unsafe_allow_html=True)
 
-# Display chat messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# Mode tabs
+tab1, tab2 = st.tabs(["💬 Campaign Builder", "🔍 Knowledge Q&A"])
+
+# ========== TAB 1: Campaign Builder (Agent Mode) ==========
+with tab1:
+    st.markdown("*Build your Meta Ads campaign with guided assistance*")
+    
+    # Progress tracker
+    if st.session_state.progress > 0:
+        st.markdown(f"**Campaign Progress: {st.session_state.progress}%**")
+        st.progress(st.session_state.progress / 100)
         
-        # Show citations and sources for assistant messages
-        if message["role"] == "assistant" and "citations" in message:
-            citations = message["citations"]
-            if citations.get("rule_ids") or citations.get("timestamps"):
-                st.markdown("---")
-                cols = st.columns([1, 3])
-                with cols[0]:
-                    st.markdown("**📎 Citations:**")
-                with cols[1]:
-                    citation_text = ""
-                    for rule_id in citations.get("rule_ids", []):
-                        citation_text += f"`[{rule_id}]` "
-                    for ts in citations.get("timestamps", []):
-                        citation_text += f"`[{ts}]` "
-                    st.markdown(citation_text)
-
-# Chat input
-if prompt := st.chat_input("Ask about Meta Ads campaigns...", disabled=not api_status):
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+        # Pillar badges
+        pillars = ["objective", "budget", "targeting", "usp", "product_name"]
+        missing = st.session_state.requirements.get("missing_pillars", pillars)
+        cols = st.columns(5)
+        for i, pillar in enumerate(pillars):
+            with cols[i]:
+                if pillar not in missing:
+                    st.markdown(f"✅ {pillar.replace('_', ' ').title()}")
+                else:
+                    st.markdown(f"⏳ {pillar.replace('_', ' ').title()}")
     
-    # Get AI response
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            result = query_rag(prompt)
+    # Start new session button
+    if not st.session_state.agent_session_id:
+        if st.button("🚀 Start Campaign Builder", disabled=not api_status, use_container_width=True):
+            session = create_agent_session()
+            if session:
+                st.session_state.agent_session_id = session["session_id"]
+                st.session_state.agent_messages = [
+                    {"role": "assistant", "content": session["welcome_message"]}
+                ]
+                st.rerun()
+    else:
+        # Reset button
+        if st.button("🔄 Start New Campaign", use_container_width=True):
+            st.session_state.agent_session_id = None
+            st.session_state.agent_messages = []
+            st.session_state.requirements = {}
+            st.session_state.progress = 0
+            st.rerun()
+    
+    # Display agent messages
+    for msg in st.session_state.agent_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    
+    # Chat input for agent
+    if st.session_state.agent_session_id:
+        if prompt := st.chat_input("Tell me about your product...", key="agent_input"):
+            # Add user message
+            st.session_state.agent_messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
             
-            if "error" in result:
-                response = f"⚠️ Error: {result['error']}"
-                citations = {}
-            else:
-                response = result.get("answer", "I couldn't find an answer.")
-                citations = result.get("citations", {})
+            # Get agent response
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    result = agent_chat(st.session_state.agent_session_id, prompt)
+                    
+                    if "error" in result:
+                        response = f"⚠️ Error: {result['error']}"
+                    else:
+                        response = result.get("response", "...")
+                        st.session_state.progress = result.get("progress", 0)
+                        st.session_state.requirements = result
+                    
+                    st.markdown(response)
+            
+            st.session_state.agent_messages.append({"role": "assistant", "content": response})
+            st.rerun()
+
+
+# ========== TAB 2: Knowledge Q&A (RAG Mode) ==========
+with tab2:
+    st.markdown("*Ask questions about Meta Ads from Jim's course*")
+    
+    # Display RAG chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message["role"] == "assistant" and "citations" in message:
+                citations = message["citations"]
+                if citations.get("rule_ids") or citations.get("timestamps"):
+                    st.markdown("---")
+                    citation_text = " ".join([f"`[{r}]`" for r in citations.get("rule_ids", [])])
+                    citation_text += " ".join([f"`[{t}]`" for t in citations.get("timestamps", [])])
+                    st.markdown(f"📎 {citation_text}")
+    
+    # RAG chat input
+    if prompt := st.chat_input("Ask about Meta Ads...", key="rag_input", disabled=not api_status):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Searching..."):
+                result = query_rag(prompt)
                 
-                if result.get("abstained"):
-                    st.warning("⚠️ The response was abstained due to lack of grounded sources.")
-            
-            st.markdown(response)
-            
-            # Show citations
-            if citations.get("rule_ids") or citations.get("timestamps"):
-                st.markdown("---")
-                cols = st.columns([1, 3])
-                with cols[0]:
-                    st.markdown("**📎 Citations:**")
-                with cols[1]:
-                    citation_text = ""
-                    for rule_id in citations.get("rule_ids", []):
-                        citation_text += f"`[{rule_id}]` "
-                    for ts in citations.get("timestamps", []):
-                        citation_text += f"`[{ts}]` "
-                    st.markdown(citation_text)
-            
-            # Show sources
-            if result.get("sources"):
-                with st.expander("📚 Sources"):
-                    for i, source in enumerate(result["sources"][:3]):
-                        st.markdown(f"**Source {i+1}** - `{source.get('timestamp_str', 'N/A')}`")
-                        st.caption(source.get("text", "")[:200] + "...")
-    
-    # Save assistant message
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": response,
-        "citations": citations
-    })
+                if "error" in result:
+                    response = f"⚠️ Error: {result['error']}"
+                    citations = {}
+                else:
+                    response = result.get("answer", "No answer found.")
+                    citations = result.get("citations", {})
+                
+                st.markdown(response)
+                
+                if citations.get("rule_ids") or citations.get("timestamps"):
+                    st.markdown("---")
+                    citation_text = " ".join([f"`[{r}]`" for r in citations.get("rule_ids", [])])
+                    citation_text += " ".join([f"`[{t}]`" for t in citations.get("timestamps", [])])
+                    st.markdown(f"📎 {citation_text}")
+        
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response,
+            "citations": citations
+        })
 
-# Welcome message
-if not st.session_state.messages:
+# Welcome message for empty state
+if not st.session_state.messages and not st.session_state.agent_messages:
     st.info("""
     👋 **Welcome to MetaPilot!**
     
-    I'm your AI-powered Senior Media Buyer, trained on Jim's Digital Marketing methodology.
-    
-    **Getting Started:**
-    1. Make sure the API backend is running (`uvicorn app.main:app --reload`)
-    2. Ingest the course video using the sidebar
-    3. Ask me anything about Meta Ads campaigns!
-    
-    **Example questions:**
-    - "What does Jim say about headline length?"
-    - "How should I structure my campaign for e-commerce?"
-    - "What's the rule for description word count?"
+    Choose your mode:
+    - **Campaign Builder**: Interactive assistant to build your complete Meta Ads campaign
+    - **Knowledge Q&A**: Ask specific questions about Jim's methodology
     """)
+
