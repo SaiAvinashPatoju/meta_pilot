@@ -302,3 +302,121 @@ async def get_session_summary(session_id: str):
     summary = agent.generate_summary(session_id)
     
     return {"summary": summary}
+
+
+# ============ Strategy & Creative Endpoints ============
+
+class GeneratePlanRequest(BaseModel):
+    session_id: str
+
+
+class GenerateCreativeRequest(BaseModel):
+    product_name: str
+    usp: str
+    target_audience: Optional[str] = None
+    usp_keywords: Optional[List[str]] = None
+
+
+@app.post("/strategy/plan")
+async def generate_campaign_plan(req: GeneratePlanRequest):
+    """Generate a campaign plan from session requirements."""
+    from app.agent.conversational import get_agent
+    from app.strategy.campaign_planner import get_campaign_planner
+    
+    agent = get_agent()
+    state = agent.get_session(req.session_id)
+    
+    if not state:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if not state.requirements.is_complete():
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Requirements incomplete. Missing: {state.requirements.missing_pillars()}"
+        )
+    
+    planner = get_campaign_planner()
+    plan = planner.generate_plan(state.requirements)
+    
+    return plan.model_dump()
+
+
+@app.post("/creative/headlines")
+async def generate_headlines(req: GenerateCreativeRequest):
+    """Generate headline variations."""
+    from app.creative.headline_gen import get_headline_generator
+    
+    generator = get_headline_generator()
+    result = generator.generate(
+        product_name=req.product_name,
+        usp=req.usp,
+        usp_keywords=req.usp_keywords,
+        target_audience=req.target_audience
+    )
+    
+    return result.model_dump()
+
+
+@app.post("/creative/descriptions")
+async def generate_descriptions(req: GenerateCreativeRequest):
+    """Generate description variations (under 5 words per COPY-002)."""
+    from app.creative.description_gen import get_description_generator
+    
+    generator = get_description_generator()
+    result = generator.generate(
+        product_name=req.product_name,
+        usp=req.usp
+    )
+    
+    return result.model_dump()
+
+
+@app.post("/creative/primary-text")
+async def generate_primary_text(req: GenerateCreativeRequest):
+    """Generate primary text using PAS framework."""
+    from app.creative.primary_text_gen import get_primary_text_generator
+    
+    generator = get_primary_text_generator()
+    result = generator.generate(
+        product_name=req.product_name,
+        usp=req.usp,
+        target_audience=req.target_audience
+    )
+    
+    return result.model_dump()
+
+
+@app.post("/creative/full-ad")
+async def generate_full_ad(req: GenerateCreativeRequest):
+    """Generate complete ad creative (headlines + descriptions + primary text)."""
+    from app.creative.headline_gen import get_headline_generator
+    from app.creative.description_gen import get_description_generator
+    from app.creative.primary_text_gen import get_primary_text_generator
+    
+    headlines = get_headline_generator().generate(
+        product_name=req.product_name,
+        usp=req.usp,
+        usp_keywords=req.usp_keywords,
+        target_audience=req.target_audience,
+        count=3
+    )
+    
+    descriptions = get_description_generator().generate(
+        product_name=req.product_name,
+        usp=req.usp,
+        count=3
+    )
+    
+    primary_text = get_primary_text_generator().generate(
+        product_name=req.product_name,
+        usp=req.usp,
+        target_audience=req.target_audience,
+        count=2
+    )
+    
+    return {
+        "headlines": headlines.model_dump(),
+        "descriptions": descriptions.model_dump(),
+        "primary_text": primary_text.model_dump(),
+        "rule_citations": ["COPY-001", "COPY-002", "COPY-003", "COPY-004"]
+    }
