@@ -26,7 +26,7 @@ def chunk_text(
         List of chunk dictionaries with id, text, and metadata
     """
     splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        encoding_name="cl100k_base",  # GPT-4 encoding
+        encoding_name="cl100k_base",  # Token encoding for chunk sizing
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", ". ", " ", ""]

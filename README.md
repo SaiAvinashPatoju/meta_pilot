@@ -28,7 +28,7 @@ pip install -r requirements.txt
 ```bash
 copy .env.example .env
 # Edit .env with your API keys:
-# - OPENAI_API_KEY
+# - GEMINI_API_KEY
 # - PINECONE_API_KEY
 # - PINECONE_ENVIRONMENT
 # - PINECONE_INDEX_NAME
@@ -103,7 +103,7 @@ meta api/
 │   │   ├── vector_store.py     # Pinecone integration
 │   │   └── rules.py            # Playbook constraints
 │   └── agent/
-│       └── llm_client.py       # GPT-4o with grounding
+│       └── llm_client.py       # Gemini with grounding
 ├── tests/
 ├── data/transcripts/           # Cached transcripts
 ├── .env.example

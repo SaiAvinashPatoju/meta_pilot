@@ -4,8 +4,7 @@ pydantic
 pydantic-settings
 python-dotenv
 youtube-transcript-api
-openai
-pinecone-client
+pinecone
 langchain
 langchain-text-splitters
 tiktoken
@@ -13,3 +12,4 @@ pytest
 pytest-asyncio
 httpx
 streamlit
+google-genai

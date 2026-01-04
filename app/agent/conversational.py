@@ -6,7 +6,7 @@ import json
 import re
 import uuid
 from typing import Dict, Optional, Tuple
-from openai import OpenAI
+from google import genai
 
 from app.config import settings
 from app.models.campaign import (
@@ -28,7 +28,7 @@ class MetaPilotAgent:
     """
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.llm_model
         self._vector_store: Optional[VectorStore] = None
         self.sessions: Dict[str, ConversationState] = {}
@@ -71,7 +71,15 @@ class MetaPilotAgent:
         if requirements.budget_amount:
             collected += f"- Budget: ${requirements.budget_amount}/{requirements.budget_type.value}\n"
         if requirements.targeting.locations:
-            collected += f"- Targeting: {', '.join(requirements.targeting.locations)}\n"
+            collected += f"- Locations: {', '.join(requirements.targeting.locations)}\n"
+        if requirements.targeting.age_min != 18 or requirements.targeting.age_max != 65:
+            collected += f"- Age Range: {requirements.targeting.age_min}-{requirements.targeting.age_max}\n"
+        if requirements.targeting.interests:
+            collected += f"- Interests: {', '.join(requirements.targeting.interests)}\n"
+        if requirements.targeting.behaviors:
+            collected += f"- Behaviors: {', '.join(requirements.targeting.behaviors)}\n"
+        if requirements.targeting.exclusions:
+            collected += f"- Exclusions: {', '.join(requirements.targeting.exclusions)}\n"
         if requirements.usp:
             collected += f"- USP: {requirements.usp}\n"
         if requirements.product_name:
@@ -110,15 +118,47 @@ class MetaPilotAgent:
         
         # Extract location
         if not requirements.targeting.locations:
-            # Common location patterns
             locations = []
+            
+            # Indian Tier-1 cities
+            tier1_cities = [
+                "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad",
+                "chennai", "kolkata", "new delhi"
+            ]
+            # Indian Tier-2 cities
+            tier2_cities = [
+                "pune", "ahmedabad", "jaipur", "lucknow", "kanpur", "nagpur",
+                "indore", "thane", "bhopal", "visakhapatnam", "vadodara",
+                "surat", "coimbatore", "kochi", "patna", "gurgaon", "noida",
+                "chandigarh", "ludhiana", "agra", "nashik", "rajkot"
+            ]
+            
+            # Check for tier patterns
+            if "tier-1" in message_lower or "tier 1" in message_lower or "tier1" in message_lower:
+                locations.extend([c.title() for c in tier1_cities])
+            if "tier-2" in message_lower or "tier 2" in message_lower or "tier2" in message_lower:
+                locations.extend([c.title() for c in tier2_cities])
+            
+            # Check for individual Indian cities
+            for city in tier1_cities + tier2_cities:
+                if city in message_lower:
+                    locations.append(city.title())
+            
+            # Check for "india" as country-level targeting
+            if "india" in message_lower and not locations:
+                locations.append("India")
+            
+            # US/other location patterns (keep for backward compatibility)
             location_patterns = [
-                r'(?:in|target(?:ing)?)\s+([A-Z][a-zA-Z\s]+?)(?:\.|,|$)',
-                r'(?:NY|NYC|LA|SF|Chicago|Miami|Boston)',
+                r'(?:in|target(?:ing)?|for)\s+([A-Z][a-zA-Z\s]+?)(?:\.|,|$)',
             ]
             for pattern in location_patterns:
                 matches = re.findall(pattern, message, re.IGNORECASE)
-                locations.extend(matches)
+                # Filter out common non-location words
+                for match in matches:
+                    clean = match.strip()
+                    if clean.lower() not in ["the", "a", "an", "all", "people", "users", "customers", "everyone"]:
+                        locations.append(clean)
             
             # State abbreviations
             states = re.findall(r'\b([A-Z]{2})\b', message)
@@ -126,6 +166,48 @@ class MetaPilotAgent:
             
             if locations:
                 requirements.targeting.locations = list(set(locations))
+        
+        # Extract interests
+        if not requirements.targeting.interests:
+            interest_keywords = [
+                "digital marketing", "small business", "e-commerce", "ecommerce",
+                "instagram business", "facebook ads", "online shopping", "shopify",
+                "dropshipping", "marketing", "entrepreneurship", "business owner",
+                "social media marketing", "online business", "startup"
+            ]
+            found_interests = [kw for kw in interest_keywords if kw in message_lower]
+            if found_interests:
+                requirements.targeting.interests = list(set(found_interests))
+        
+        # Extract behaviors
+        if not requirements.targeting.behaviors:
+            behavior_keywords = [
+                "engaged shoppers", "page admins", "facebook page admins",
+                "online buyers", "mobile shoppers", "admins of facebook pages",
+                "small business owners", "frequent travelers"
+            ]
+            found_behaviors = [kw for kw in behavior_keywords if kw in message_lower]
+            if found_behaviors:
+                requirements.targeting.behaviors = list(set(found_behaviors))
+        
+        # Extract exclusions
+        if "exclude" in message_lower or "not target" in message_lower or "exclusion" in message_lower:
+            exclusion_terms = [
+                "job seekers", "students", "unemployed", "competitors",
+                "existing customers", "job seeker", "student"
+            ]
+            found_exclusions = [ex for ex in exclusion_terms if ex in message_lower]
+            if found_exclusions:
+                requirements.targeting.exclusions.extend(found_exclusions)
+                requirements.targeting.exclusions = list(set(requirements.targeting.exclusions))
+        
+        # Extract age range
+        age_match = re.search(r'(\d{2})\s*[-–to]+\s*(\d{2})', message)
+        if age_match:
+            age_min, age_max = int(age_match.group(1)), int(age_match.group(2))
+            if 13 <= age_min <= 65 and 13 <= age_max <= 65:
+                requirements.targeting.age_min = age_min
+                requirements.targeting.age_max = age_max
         
         # Extract product name (look for quoted text or "called X")
         if not requirements.product_name:
@@ -182,25 +264,43 @@ class MetaPilotAgent:
         if state.requirements.is_complete() and state.phase == "gathering":
             state.phase = "review"
         
-        # Build the conversation for the LLM
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "system", "content": self._build_context_prompt(state)},
-        ]
+        # Retrieve relevant context from knowledge base (RAG)
+        rag_context = ""
+        try:
+            results = self.vector_store.query(user_message, top_k=3)
+            if results and len(results) > 0:
+                rag_context = "\n\n## Relevant Course Insights\n"
+                for r in results:
+                    timestamp = r.get('metadata', {}).get('timestamp_str', '')
+                    text = r.get('text', r.get('metadata', {}).get('text', ''))
+                    if text:
+                        rag_context += f"- [{timestamp}] {text[:300]}...\n" if len(text) > 300 else f"- [{timestamp}] {text}\n"
+        except Exception:
+            pass  # Graceful degradation if vector store unavailable
         
-        # Add conversation history (last 10 messages to avoid token limits)
+        # Build the full prompt for Gemini (system + context + conversation)
+        system_content = SYSTEM_PROMPT + "\n\n" + rag_context + self._build_context_prompt(state)
+        
+        # Format conversation history as a single prompt
+        conversation_text = ""
         for msg in state.messages[-10:]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            role = "User" if msg["role"] == "user" else "Assistant"
+            conversation_text += f"\n{role}: {msg['content']}\n"
         
-        # Generate response
-        response = self.client.chat.completions.create(
+        full_prompt = f"{system_content}\n\n## Conversation\n{conversation_text}\n\nAssistant:"
+        
+        # Generate response with Gemini
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=500
+            contents=full_prompt,
+            config={
+                "temperature": 0.4,
+                "max_output_tokens": 1000,
+                "top_p": 0.95,
+            }
         )
         
-        assistant_message = response.choices[0].message.content
+        assistant_message = response.text
         state.add_message("assistant", assistant_message)
         
         return {
@@ -244,6 +344,8 @@ Let's start! **What product or service are you looking to advertise today?**"""
             age_min=req.targeting.age_min,
             age_max=req.targeting.age_max,
             interests=", ".join(req.targeting.interests) or "Not specified",
+            behaviors=", ".join(req.targeting.behaviors) or "Not specified",
+            exclusions=", ".join(req.targeting.exclusions) or "None",
             usp=req.usp or "Not specified",
             pixel_installed=req.pixel_installed
         )

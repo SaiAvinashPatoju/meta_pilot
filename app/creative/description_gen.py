@@ -3,7 +3,7 @@ Description Generator - Creative Studio.
 Generates ad descriptions following Jim's strict <5 words rule.
 """
 from typing import List, Optional
-from openai import OpenAI
+from google import genai
 from pydantic import BaseModel
 from app.config import settings
 from app.knowledge_base.rules import validate_description_length
@@ -44,7 +44,7 @@ Each must be UNDER 5 WORDS. No exceptions.
 Do not number them or add any other text."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.llm_model
     
     def generate(
@@ -78,18 +78,19 @@ USP: {usp}{avoid_text}
 
 REMEMBER: Each description must be UNDER 5 WORDS!"""
 
-        response = self.client.chat.completions.create(
+        full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=150
+            contents=full_prompt,
+            config={
+                "temperature": 0.7,
+                "max_output_tokens": 150
+            }
         )
         
         # Parse descriptions
-        raw_output = response.choices[0].message.content
+        raw_output = response.text
         descriptions = [
             line.strip().lstrip("1234567890.-) ").strip('"')
             for line in raw_output.strip().split("\n") 

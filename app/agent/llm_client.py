@@ -1,10 +1,10 @@
 """
 LLM client with grounding enforcement.
-Abstracts OpenAI calls and enforces playbook citation requirements.
+Abstracts Google Gemini calls and enforces playbook citation requirements.
 """
 import re
 from typing import List, Dict, Optional
-from openai import OpenAI
+from google import genai
 from app.config import settings
 from app.knowledge_base.rules import format_rules_for_prompt, PLAYBOOK_RULES
 
@@ -13,7 +13,7 @@ class LLMClient:
     """Abstracted LLM client with provider swapping capability."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.llm_model
     
     def _build_system_prompt(self) -> str:
@@ -67,17 +67,19 @@ When answering:
 
 Please provide an answer based on the above context, citing relevant rule IDs and/or timestamps."""
 
-        response = self.client.chat.completions.create(
+        # Combine system prompt and user message for Gemini
+        full_prompt = f"{self._build_system_prompt()}\n\n{user_message}"
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self._build_system_prompt()},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.3,  # Lower temperature for factual answers
-            max_tokens=1000
+            contents=full_prompt,
+            config={
+                "temperature": 0.3,
+                "max_output_tokens": 1000
+            }
         )
         
-        answer = response.choices[0].message.content
+        answer = response.text
         
         # Check for grounding (must cite at least one rule or timestamp)
         grounding_check = self._verify_grounding(answer)

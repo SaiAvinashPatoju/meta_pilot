@@ -1,11 +1,11 @@
 """
 Pinecone vector store integration.
-Handles embeddings via OpenAI and vector upsert/query.
+Handles embeddings via Google Gemini and vector upsert/query.
 """
 import os
 from typing import List, Dict, Optional
 from pinecone import Pinecone, ServerlessSpec
-from openai import OpenAI
+from google import genai
 from app.config import settings
 
 
@@ -13,10 +13,10 @@ class VectorStore:
     """Wrapper around Pinecone for embedding storage and retrieval."""
     
     def __init__(self):
-        """Initialize Pinecone client and OpenAI embeddings."""
+        """Initialize Pinecone client and Gemini embeddings."""
         self.pc = Pinecone(api_key=settings.pinecone_api_key)
         self.index_name = settings.pinecone_index_name
-        self.embed_client = OpenAI(api_key=settings.openai_api_key)
+        self.embed_client = genai.Client(api_key=settings.gemini_api_key)
         self.embedding_model = settings.embedding_model
         
         # Ensure index exists
@@ -29,9 +29,10 @@ class VectorStore:
         
         if self.index_name not in existing_indexes:
             # Create serverless index (free tier compatible)
+            # Gemini text-embedding-004 produces 768-dimensional vectors
             self.pc.create_index(
                 name=self.index_name,
-                dimension=1536,  # text-embedding-3-small dimension
+                dimension=768,  # Gemini text-embedding-004 dimension
                 metric="cosine",
                 spec=ServerlessSpec(
                     cloud="aws",
@@ -41,7 +42,7 @@ class VectorStore:
     
     def embed(self, texts: List[str]) -> List[List[float]]:
         """
-        Generate embeddings for a list of texts.
+        Generate embeddings for a list of texts using Gemini.
         
         Args:
             texts: List of text strings to embed
@@ -49,18 +50,15 @@ class VectorStore:
         Returns:
             List of embedding vectors
         """
-        # OpenAI has a limit of 8191 tokens per request, batch if needed
-        batch_size = 100
         all_embeddings = []
         
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            response = self.embed_client.embeddings.create(
+        # Gemini embedding API - process one at a time for reliability
+        for text in texts:
+            response = self.embed_client.models.embed_content(
                 model=self.embedding_model,
-                input=batch
+                contents=text
             )
-            batch_embeddings = [item.embedding for item in response.data]
-            all_embeddings.extend(batch_embeddings)
+            all_embeddings.append(response.embeddings[0].values)
         
         return all_embeddings
     

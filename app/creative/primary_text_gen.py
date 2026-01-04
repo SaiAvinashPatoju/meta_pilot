@@ -3,7 +3,7 @@ Primary Text Generator - Creative Studio.
 Generates ad body copy using Problem-Agitation-Solution framework.
 """
 from typing import List, Optional
-from openai import OpenAI
+from google import genai
 from pydantic import BaseModel
 from app.config import settings
 
@@ -48,7 +48,7 @@ FORMATTING:
 OUTPUT: One complete primary text, ready to use."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.llm_model
     
     def generate(
@@ -85,18 +85,19 @@ TARGET AUDIENCE: {target_audience or 'Not specified'}{pain_text}
 Generate {count} different versions, each using the PAS framework.
 Separate each version with "---" on its own line."""
 
-        response = self.client.chat.completions.create(
+        full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.8,
-            max_tokens=1500
+            contents=full_prompt,
+            config={
+                "temperature": 0.8,
+                "max_output_tokens": 1500
+            }
         )
         
         # Parse variations (separated by ---)
-        raw_output = response.choices[0].message.content
+        raw_output = response.text
         variations = [
             v.strip() 
             for v in raw_output.split("---") 
@@ -120,19 +121,21 @@ A hook is the FIRST LINE of the ad that stops the scroll.
 Each hook should be under 100 characters.
 Output one hook per line, no numbering."""
 
-        response = self.client.chat.completions.create(
+        system_prompt = "You write scroll-stopping first lines for Facebook ads."
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=[
-                {"role": "system", "content": "You write scroll-stopping first lines for Facebook ads."},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.9,
-            max_tokens=300
+            contents=full_prompt,
+            config={
+                "temperature": 0.9,
+                "max_output_tokens": 300
+            }
         )
         
         hooks = [
             line.strip().lstrip("1234567890.-) ")
-            for line in response.choices[0].message.content.strip().split("\n")
+            for line in response.text.strip().split("\n")
             if line.strip()
         ][:count]
         

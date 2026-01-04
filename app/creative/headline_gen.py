@@ -3,7 +3,7 @@ Headline Generator - Creative Studio.
 Generates ad headlines following Jim's copywriting rules.
 """
 from typing import List, Optional
-from openai import OpenAI
+from google import genai
 from pydantic import BaseModel, Field
 from app.config import settings
 from app.knowledge_base.rules import validate_headline_has_usp
@@ -47,7 +47,7 @@ Each headline should be different in approach:
 - Direct offer"""
 
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = genai.Client(api_key=settings.gemini_api_key)
         self.model = settings.llm_model
     
     def generate(
@@ -80,18 +80,19 @@ TARGET AUDIENCE: {target_audience or 'Not specified'}
 
 Remember: Headlines must be concise and focus on the USP."""
 
-        response = self.client.chat.completions.create(
+        full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
+
+        response = self.client.models.generate_content(
             model=self.model,
-            messages=[
-                {"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.8,  # Higher creativity for copy
-            max_tokens=300
+            contents=full_prompt,
+            config={
+                "temperature": 0.8,
+                "max_output_tokens": 300
+            }
         )
         
         # Parse headlines (one per line)
-        raw_output = response.choices[0].message.content
+        raw_output = response.text
         headlines = [
             line.strip().lstrip("1234567890.-) ") 
             for line in raw_output.strip().split("\n") 

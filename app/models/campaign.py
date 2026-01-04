@@ -29,6 +29,9 @@ class TargetingInfo(BaseModel):
     age_max: int = Field(default=65, ge=13, le=65)
     genders: List[str] = Field(default_factory=lambda: ["all"])
     interests: List[str] = Field(default_factory=list)
+    behaviors: List[str] = Field(default_factory=list, description="Behavioral targeting (e.g., Engaged shoppers)")
+    exclusions: List[str] = Field(default_factory=list, description="Audiences to exclude (e.g., Job seekers)")
+    custom_audiences: List[str] = Field(default_factory=list, description="Custom/lookalike audience IDs")
     radius_miles: Optional[int] = Field(default=None, description="Radius for local targeting")
 
 
