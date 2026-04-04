@@ -50,7 +50,7 @@ class MetaAuthClient:
         self.app_id = settings.meta_app_id
         self.app_secret = settings.meta_app_secret
         self.redirect_uri = settings.meta_redirect_uri
-        self._access_token: Optional[str] = settings.meta_access_token or None
+        self._access_token: Optional[str] = settings.meta_access_token
     
     @property
     def access_token(self) -> Optional[str]:

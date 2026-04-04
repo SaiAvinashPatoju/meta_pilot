@@ -58,7 +58,10 @@ class IngestRequest(BaseModel):
     @classmethod
     def validate_youtube_id(cls, v: str) -> str:
         if not re.match(r'^[A-Za-z0-9_\-]{1,64}$', v):
-            raise ValueError("youtube_id must contain only alphanumeric characters, hyphens, or underscores")
+            raise ValueError(
+                "youtube_id must be 1–64 characters and contain only "
+                "alphanumeric characters, hyphens, or underscores"
+            )
         return v
 
 
@@ -78,7 +81,10 @@ class QueryRequest(BaseModel):
     @classmethod
     def validate_video_id(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not re.match(r'^[A-Za-z0-9_\-]{1,64}$', v):
-            raise ValueError("video_id must contain only alphanumeric characters, hyphens, or underscores")
+            raise ValueError(
+                "video_id must be 1–64 characters and contain only "
+                "alphanumeric characters, hyphens, or underscores"
+            )
         return v
 
 

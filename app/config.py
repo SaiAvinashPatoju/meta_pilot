@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from dotenv import load_dotenv
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     # Meta Marketing API
     meta_app_id: str = ""
     meta_app_secret: str = ""
-    meta_access_token: str = ""
+    meta_access_token: Optional[str] = None
     meta_ad_account_id: str = ""
     meta_redirect_uri: str = "http://localhost:8000/auth/callback"
 
