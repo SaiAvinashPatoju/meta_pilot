@@ -29,6 +29,9 @@ build/
 data/transcripts/*.txt
 data/transcripts/*.json
 
+# Campaign state files (may contain user data)
+data/state/*.json
+
 # OS files
 .DS_Store
 Thumbs.db

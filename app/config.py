@@ -1,42 +1,47 @@
-import os
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env")
     # Google Gemini (for LLM and embeddings)
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    
+    gemini_api_key: str = ""
+
     # Pinecone
-    pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
-    pinecone_environment: str = os.getenv("PINECONE_ENVIRONMENT", "us-east-1")
-    pinecone_index_name: str = os.getenv("PINECONE_INDEX_NAME", "metapilot-kb")
-    
+    pinecone_api_key: str = ""
+    pinecone_environment: str = "us-east-1"
+    pinecone_index_name: str = "metapilot-kb"
+
     # LLM settings - Multi-model configuration
-    llm_model: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
-    llm_model_pro: str = os.getenv("LLM_MODEL_PRO", "gemini-2.0-flash")  # For quality tasks
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
-    
+    llm_model: str = "gemini-2.0-flash"
+    llm_model_pro: str = "gemini-2.0-flash"  # For quality tasks
+    embedding_model: str = "text-embedding-004"
+
     # State store settings
-    state_storage_dir: str = os.getenv("STATE_STORAGE_DIR", "data/state")
-    
+    state_storage_dir: str = "data/state"
+
     # Rules engine thresholds (can be overridden via env)
-    rules_learning_phase_days: int = int(os.getenv("RULES_LEARNING_PHASE_DAYS", "3"))
-    rules_min_leads_for_decision: int = int(os.getenv("RULES_MIN_LEADS", "10"))
-    rules_cpl_pause_threshold: float = float(os.getenv("RULES_CPL_PAUSE_THRESHOLD", "2.0"))
-    rules_cpl_scale_threshold: float = float(os.getenv("RULES_CPL_SCALE_THRESHOLD", "0.8"))
-    rules_max_budget_increase: float = float(os.getenv("RULES_MAX_BUDGET_INCREASE", "0.20"))
-    rules_min_spend_for_pause: float = float(os.getenv("RULES_MIN_SPEND_FOR_PAUSE", "100"))
-    
+    rules_learning_phase_days: int = 3
+    rules_min_leads_for_decision: int = 10
+    rules_cpl_pause_threshold: float = 2.0
+    rules_cpl_scale_threshold: float = 0.8
+    rules_max_budget_increase: float = 0.20
+    rules_min_spend_for_pause: float = 100.0
+
     # Default targeting for Indian market
     default_locations: list = ["India"]
     default_age_min: int = 22
     default_age_max: int = 38
-    
-    class Config:
-        env_file = ".env"
+
+    # Meta Marketing API
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_access_token: str = ""
+    meta_ad_account_id: str = ""
+    meta_redirect_uri: str = "http://localhost:8000/auth/callback"
 
 
 settings = Settings()
