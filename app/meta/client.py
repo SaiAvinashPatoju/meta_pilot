@@ -110,7 +110,8 @@ class MetaAdsClient:
         response = requests.post(
             self._account_url("campaigns"),
             headers=self._headers,
-            json=payload
+            json=payload,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -122,7 +123,8 @@ class MetaAdsClient:
         response = requests.get(
             self._account_url("campaigns"),
             headers=self._headers,
-            params={"fields": ",".join(fields)}
+            params={"fields": ",".join(fields)},
+            timeout=30
         )
         
         data = self._handle_response(response)
@@ -133,7 +135,8 @@ class MetaAdsClient:
         response = requests.post(
             f"{self.BASE_URL}/{campaign_id}",
             headers=self._headers,
-            json=updates
+            json=updates,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -142,7 +145,8 @@ class MetaAdsClient:
         """Delete a campaign."""
         response = requests.delete(
             f"{self.BASE_URL}/{campaign_id}",
-            headers=self._headers
+            headers=self._headers,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -173,7 +177,8 @@ class MetaAdsClient:
         response = requests.post(
             self._account_url("adsets"),
             headers=self._headers,
-            json=payload
+            json=payload,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -188,7 +193,7 @@ class MetaAdsClient:
         if campaign_id:
             params["filtering"] = f'[{{"field":"campaign_id","operator":"EQUAL","value":"{campaign_id}"}}]'
         
-        response = requests.get(url, headers=self._headers, params=params)
+        response = requests.get(url, headers=self._headers, params=params, timeout=30)
         
         data = self._handle_response(response)
         return data.get("data", [])
@@ -205,7 +210,8 @@ class MetaAdsClient:
         response = requests.post(
             self._account_url("adcreatives"),
             headers=self._headers,
-            json=payload
+            json=payload,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -224,7 +230,8 @@ class MetaAdsClient:
         response = requests.post(
             self._account_url("ads"),
             headers=self._headers,
-            json=payload
+            json=payload,
+            timeout=30
         )
         
         return self._handle_response(response)
@@ -239,12 +246,10 @@ class MetaAdsClient:
         if adset_id:
             params["filtering"] = f'[{{"field":"adset_id","operator":"EQUAL","value":"{adset_id}"}}]'
         
-        response = requests.get(url, headers=self._headers, params=params)
+        response = requests.get(url, headers=self._headers, params=params, timeout=30)
         
         data = self._handle_response(response)
         return data.get("data", [])
-    
-    # ============ Insights ============
     
     def get_campaign_insights(
         self, 
@@ -264,7 +269,8 @@ class MetaAdsClient:
             params={
                 "fields": ",".join(fields),
                 "date_preset": date_preset
-            }
+            },
+            timeout=30
         )
         
         data = self._handle_response(response)

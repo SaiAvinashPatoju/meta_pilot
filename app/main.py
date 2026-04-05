@@ -4,8 +4,9 @@ RAG-based API for ingesting YouTube content and answering questions with grounde
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
+import re
 import logging
 
 from app.knowledge_base.transcriber import transcribe_youtube, get_transcript_with_timestamps
@@ -29,7 +30,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -50,8 +51,18 @@ def get_vector_store() -> VectorStore:
 
 class IngestRequest(BaseModel):
     youtube_id: str
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
+    chunk_size: int = Field(default=1000, ge=100, le=4000)
+    chunk_overlap: int = Field(default=200, ge=0, le=1000)
+
+    @field_validator("youtube_id")
+    @classmethod
+    def validate_youtube_id(cls, v: str) -> str:
+        if not re.match(r'^[A-Za-z0-9_\-]{1,64}$', v):
+            raise ValueError(
+                "youtube_id must be 1–64 characters and contain only "
+                "alphanumeric characters, hyphens, or underscores"
+            )
+        return v
 
 
 class IngestResponse(BaseModel):
@@ -63,8 +74,18 @@ class IngestResponse(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
-    top_k: int = 4
+    top_k: int = Field(default=4, ge=1, le=20)
     video_id: Optional[str] = None  # Optional filter by video
+
+    @field_validator("video_id")
+    @classmethod
+    def validate_video_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not re.match(r'^[A-Za-z0-9_\-]{1,64}$', v):
+            raise ValueError(
+                "video_id must be 1–64 characters and contain only "
+                "alphanumeric characters, hyphens, or underscores"
+            )
+        return v
 
 
 class QueryResponse(BaseModel):
@@ -144,7 +165,7 @@ async def ingest(req: IngestRequest):
         
     except Exception as e:
         logger.error(f"Ingestion failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Ingestion failed. Check server logs for details.")
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -196,7 +217,7 @@ async def query(req: QueryRequest):
         
     except Exception as e:
         logger.error(f"Query failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Query failed. Check server logs for details.")
 
 
 @app.post("/validate")
@@ -228,7 +249,7 @@ async def delete_video(video_id: str):
         return result
     except Exception as e:
         logger.error(f"Delete failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Delete failed. Check server logs for details.")
 
 
 # ============ Conversational Agent Endpoints ============

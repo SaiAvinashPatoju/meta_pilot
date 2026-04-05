@@ -49,7 +49,7 @@ class MetaAuthClient:
     def __init__(self):
         self.app_id = settings.meta_app_id
         self.app_secret = settings.meta_app_secret
-        self.redirect_uri = "http://localhost:8000/auth/callback"
+        self.redirect_uri = settings.meta_redirect_uri
         self._access_token: Optional[str] = settings.meta_access_token
     
     @property
@@ -98,7 +98,7 @@ class MetaAuthClient:
             "code": code
         }
         
-        response = requests.get(self.TOKEN_URL, params=params)
+        response = requests.get(self.TOKEN_URL, params=params, timeout=10)
         data = response.json()
         
         if "error" in data:
@@ -128,7 +128,7 @@ class MetaAuthClient:
             "access_token": f"{self.app_id}|{self.app_secret}"
         }
         
-        response = requests.get(self.DEBUG_TOKEN_URL, params=params)
+        response = requests.get(self.DEBUG_TOKEN_URL, params=params, timeout=10)
         data = response.json().get("data", {})
         
         return AccessTokenInfo(
@@ -149,7 +149,7 @@ class MetaAuthClient:
             "fb_exchange_token": short_lived_token
         }
         
-        response = requests.get(self.TOKEN_URL, params=params)
+        response = requests.get(self.TOKEN_URL, params=params, timeout=10)
         data = response.json()
         
         if "error" in data:
